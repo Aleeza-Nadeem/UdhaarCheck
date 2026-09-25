@@ -1,3 +1,4 @@
-threshold=0.3
-roc_auc=0.761
-pr_auc=0.540
+threshold=0.35
+roc_auc=0.779
+pr_auc=0.556
+best_params={'n_estimators': 200, 'min_samples_split': 5, 'min_samples_leaf': 10, 'max_features': 'sqrt', 'max_depth': 15}
