@@ -7,9 +7,9 @@ import joblib
 # Config
 # ---------------------------------------------------------
 MODEL_PATH = "kiryana_default_model.pkl"
-FINAL_THRESHOLD = 0.30  # chosen deliberately to favor recall over precision:
-                         # missing a real defaulter costs the shopkeeper more
-                         # than wrongly flagging a reliable customer
+FINAL_THRESHOLD = 0.35  # used only to set the visual "risk tier" cue below —
+                         # the actual decision is left to the user via the
+                         # displayed probability, not a hard flag (see Result section)
 
 st.set_page_config(page_title="Kiryana Credit Risk Checker", page_icon="🧾", layout="centered")
 
@@ -83,6 +83,9 @@ with st.form("customer_form"):
 # ---------------------------------------------------------
 def build_features(limit_bal, sex, education, marriage, age, pay_status, bill_amts, pay_amts):
     row = {
+        "ID": 0,  # the training data included ID as a column (unintentionally) —
+                  # kept here only so the model's expected columns line up;
+                  # this value has no real meaning and doesn't affect the prediction logic
         "LIMIT_BAL": limit_bal,
         "SEX": sex,
         "EDUCATION": education,
@@ -128,45 +131,42 @@ if submitted:
         X = X[model.feature_names_in_]
 
     proba = model.predict_proba(X)[0, 1]
-    is_flagged = proba >= FINAL_THRESHOLD
 
     st.divider()
     st.subheader("Result")
 
-    col1, col2 = st.columns(2)
-    with col1:
-        st.metric("Default probability", f"{proba:.1%}")
-    with col2:
-        if proba < 0.35:
-            tier, color = "Low", "green"
-        elif proba < 0.65:
-            tier, color = "Medium", "orange"
-        else:
-            tier, color = "High", "red"
-        st.metric("Risk tier", tier)
-
+    # Probability is the primary output — the model reports its confidence,
+    # the user makes the actual call. No binary "flagged / not flagged" verdict:
+    # at ~0.44 precision, presenting a hard flag would overstate certainty and
+    # risks eroding trust in the tool the first time a flag turns out wrong.
+    st.metric("Default probability", f"{proba:.1%}")
     st.progress(min(proba, 1.0))
 
-    if is_flagged:
-        st.error(
-            f"⚠️ Flagged as likely defaulter (probability ≥ {FINAL_THRESHOLD:.0%} threshold). "
-            "Consider a deposit, reduced credit limit, or closer follow-up."
-        )
+    if proba < FINAL_THRESHOLD:
+        tier, msg = "Low", "Model sees limited risk signals for this customer."
+    elif proba < 0.65:
+        tier, msg = "Medium", "Some risk signals present — weigh this alongside what you know about this customer."
     else:
-        st.success(
-            f"✅ Not flagged (probability below {FINAL_THRESHOLD:.0%} threshold). "
-            "Still use judgment — this is a decision aid, not a final call."
-        )
+        tier, msg = "High", "Strong risk signals — worth extra caution, but this isn't a final verdict."
+
+    st.write(f"**Risk tier: {tier}**")
+    st.caption(msg)
+
+    st.info(
+        "This is a probability estimate, not a decision. It reflects payment "
+        "patterns only — it doesn't know your history with this customer. "
+        "Use it as one input alongside your own judgment."
+    )
 
     with st.expander("Why this matters / model limitations"):
         st.write(
-            "- This model reaches ROC-AUC 0.76 and PR-AUC 0.54 on held-out data — "
+            "- This model reaches ROC-AUC 0.78 and PR-AUC 0.56 on held-out data — "
             "meaningfully better than a guess, but not a guarantee for any individual customer.\n"
-            "- The threshold (0.30) is set deliberately low to favor catching more real "
-            "defaulters, at the cost of some false alarms on reliable customers.\n"
             "- Six months of payment history can't capture external shocks (job loss, medical "
             "costs, etc.) that also drive defaults — this tool works best combined with what "
-            "you already know about the customer, not as a replacement for it."
+            "you already know about the customer, not as a replacement for it.\n"
+            "- The risk tier above is a visual aid only. The probability percentage is the "
+            "real signal — use your own judgment on where your comfort line sits."
         )
 
 st.divider()
